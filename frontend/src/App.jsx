@@ -7,6 +7,8 @@ import Products from "./pages/Products";
 import Sales from "./pages/Sales";
 import Purchases from "./pages/Purchases";
 import Layout from "./components/layout/Layout";
+import Statistics from "./pages/Statistics";
+import AIAssistant from "./pages/AIAssistant";
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -60,6 +62,22 @@ function AppRoutes() {
         element={
           <PrivateRoute>
             <Purchases />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/statistics"
+        element={
+          <PrivateRoute>
+            <Statistics />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/ai"
+        element={
+          <PrivateRoute>
+            <AIAssistant />
           </PrivateRoute>
         }
       />
