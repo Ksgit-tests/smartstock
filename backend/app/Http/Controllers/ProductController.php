@@ -35,7 +35,7 @@ class ProductController extends Controller
         'category'       => 'nullable|string|max:255',
     ]);
 
-    $validated['user_id'] = auth()->id(); // ← Plus jamais user_id = 1
+    $validated['user_id'] = auth()->id(); // Associe le produit à l'utilisateur connecté
 
     $product = Product::create($validated);
 

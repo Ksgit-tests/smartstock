@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 /* ─── STYLES GLOBAUX (injectés une seule fois) ─── */
 const injectStyles = () => {
+  if (typeof document === "undefined") return;
   if (document.getElementById("ss-global")) return;
   const s = document.createElement("style");
   s.id = "ss-global";
@@ -49,6 +50,7 @@ const injectStyles = () => {
     .ss-btn:hover:not(:disabled) { transform: translateY(-2px); }
     .ss-btn:active:not(:disabled){ transform: translateY(0); }
     .ss-btn:disabled { opacity: .65; cursor: not-allowed; }
+    .ss-btn:focus-visible { outline: 2px solid #16a34a; outline-offset: 2px; }
 
     .ss-btn-green {
       background: linear-gradient(135deg, #15803d, #16a34a, #22c55e);
@@ -67,99 +69,111 @@ const injectStyles = () => {
       transition: color .2s;
     }
     .ss-toggle:hover { color: #6b7280; }
+    .ss-toggle:focus-visible { outline: 2px solid #16a34a; outline-offset: 2px; border-radius: 4px; }
 
     .ss-link { color: #16a34a; font-weight: 600; text-decoration: none; }
     .ss-link:hover { text-decoration: underline; }
+    .ss-link:focus-visible { outline: 2px solid #16a34a; outline-offset: 2px; border-radius: 2px; }
+
+    /* Reduced motion: respecter les préférences utilisateur */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+      }
+    }
 
     @media (max-width: 768px) { .ss-panel-left { display: none !important; } }
   `;
   document.head.appendChild(s);
 };
 
+// Injection unique au chargement du module (évite un appel à chaque render)
+injectStyles();
+
 /* ─── ICÔNES SVG ─── */
+const SvgBase = (props) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    focusable="false"
+    {...props}
+  />
+);
+
 const Ico = {
   email: (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <SvgBase>
       <rect x="2" y="4" width="20" height="16" rx="2" />
       <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-    </svg>
+    </SvgBase>
   ),
   lock: (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <SvgBase>
       <rect x="3" y="11" width="18" height="11" rx="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
+    </SvgBase>
   ),
   eye: (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <SvgBase>
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
       <circle cx="12" cy="12" r="3" />
-    </svg>
+    </SvgBase>
   ),
   eyeOff: (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <SvgBase>
       <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
       <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
       <line x1="1" y1="1" x2="23" y2="23" />
-    </svg>
+    </SvgBase>
   ),
   arrow: (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <SvgBase strokeWidth="2.5">
       <line x1="5" y1="12" x2="19" y2="12" />
       <polyline points="12 5 19 12 12 19" />
-    </svg>
+    </SvgBase>
   ),
 };
 
 /* ─── ILLUSTRATION DASHBOARD ─── */
+const STAT_CARDS = [
+  {
+    x: 24,
+    color: "rgba(34,197,94,0.35)",
+    val: "12 450",
+    lbl: "CA Mensuel",
+    trend: "↑ 8%",
+  },
+  {
+    x: 122,
+    color: "rgba(239,68,68,0.25)",
+    val: "4 200",
+    lbl: "Dépenses",
+    trend: "↓ 3%",
+  },
+  {
+    x: 220,
+    color: "rgba(37,99,235,0.3)",
+    val: "8 250",
+    lbl: "Bénéfice",
+    trend: "↑ 14%",
+  },
+];
+const BAR_HEIGHTS = [18, 30, 22, 38, 28, 44, 34];
+
 const DashIllustration = () => (
   <svg
     viewBox="0 0 320 200"
+    role="img"
+    aria-label="Aperçu du tableau de bord SmartStock"
     style={{
       width: "100%",
       maxWidth: 320,
@@ -197,30 +211,8 @@ const DashIllustration = () => (
     />
 
     {/* 3 stat-cards */}
-    {[
-      {
-        x: 24,
-        color: "rgba(34,197,94,0.35)",
-        val: "12 450",
-        lbl: "CA Mensuel",
-        trend: "↑ 8%",
-      },
-      {
-        x: 122,
-        color: "rgba(239,68,68,0.25)",
-        val: "4 200",
-        lbl: "Dépenses",
-        trend: "↓ 3%",
-      },
-      {
-        x: 220,
-        color: "rgba(37,99,235,0.3)",
-        val: "8 250",
-        lbl: "Bénéfice",
-        trend: "↑ 14%",
-      },
-    ].map((c, i) => (
-      <g key={i}>
+    {STAT_CARDS.map((c) => (
+      <g key={c.lbl}>
         <rect x={c.x} y="46" width="90" height="52" rx="8" fill={c.color} />
         <text
           x={c.x + 8}
@@ -254,7 +246,7 @@ const DashIllustration = () => (
     ))}
 
     {/* Bar chart */}
-    {[18, 30, 22, 38, 28, 44, 34].map((h, i) => (
+    {BAR_HEIGHTS.map((h, i) => (
       <rect
         key={i}
         x={24 + i * 18}
@@ -279,10 +271,15 @@ const DashIllustration = () => (
   </svg>
 );
 
+/* ─── Sous-composants UI (mémoïsés via constantes pour éviter recréations) ─── */
+const FEATURES = [
+  ["📦", "Gestion des stocks en temps réel"],
+  ["💰", "Suivi des ventes et achats"],
+  ["🤖", "Assistant IA intégré"],
+];
+
 /* ─── COMPOSANT LOGIN ─── */
 export default function Login() {
-  injectStyles();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -291,19 +288,28 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      await login(email, password);
-      navigate("/");
-    } catch {
-      setError("Email ou mot de passe incorrect.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleSubmit = useCallback(
+    async (e) => {
+      e.preventDefault();
+      setError("");
+      setLoading(true);
+      try {
+        await login(email, password);
+        navigate("/");
+      } catch {
+        setError("Email ou mot de passe incorrect.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [email, password, login, navigate],
+  );
+
+  const onEmailChange = useCallback((e) => setEmail(e.target.value), []);
+  const onPasswordChange = useCallback((e) => setPassword(e.target.value), []);
+  const togglePw = useCallback(() => setShowPw((v) => !v), []);
+
+  const year = useMemo(() => new Date().getFullYear(), []);
 
   return (
     <div
@@ -315,8 +321,9 @@ export default function Login() {
       }}
     >
       {/* ══ PANNEAU GAUCHE ══ */}
-      <div
+      <aside
         className="ss-panel-left"
+        aria-label="Présentation SmartStock"
         style={{
           flex: "0 0 44%",
           background:
@@ -330,6 +337,7 @@ export default function Login() {
       >
         {/* Cercles déco */}
         <div
+          aria-hidden="true"
           style={{
             position: "absolute",
             width: 400,
@@ -343,6 +351,7 @@ export default function Login() {
           }}
         />
         <div
+          aria-hidden="true"
           style={{
             position: "absolute",
             width: 200,
@@ -365,7 +374,6 @@ export default function Login() {
             animation: "fadeLeft .5s ease",
           }}
         >
-          {/* Logo avec filtre pour fond sombre */}
           <div
             style={{
               background: "rgba(255,255,255,0.12)",
@@ -377,8 +385,12 @@ export default function Login() {
             <img
               src="/logo.png"
               alt="SmartStock"
+              width="32"
+              height="32"
+              loading="eager"
+              decoding="async"
               style={{ height: 32, width: "auto", display: "block" }}
-              onError={(e) => (e.target.style.display = "none")}
+              onError={(e) => (e.currentTarget.style.display = "none")}
             />
           </div>
           <div>
@@ -460,11 +472,7 @@ export default function Login() {
           </div>
 
           {/* Features */}
-          {[
-            ["📦", "Gestion des stocks en temps réel"],
-            ["💰", "Suivi des ventes et achats"],
-            ["🤖", "Assistant IA intégré"],
-          ].map(([icon, txt], i) => (
+          {FEATURES.map(([icon, txt], i) => (
             <div
               key={txt}
               style={{
@@ -477,6 +485,7 @@ export default function Login() {
               }}
             >
               <div
+                aria-hidden="true"
                 style={{
                   width: 30,
                   height: 30,
@@ -511,12 +520,12 @@ export default function Login() {
             marginTop: "1.5rem",
           }}
         >
-          © {new Date().getFullYear()} SmartStock Insight
+          © {year} SmartStock Insight
         </p>
-      </div>
+      </aside>
 
       {/* ══ PANNEAU DROIT ══ */}
-      <div
+      <main
         style={{
           flex: 1,
           display: "flex",
@@ -556,6 +565,8 @@ export default function Login() {
           {/* Erreur */}
           {error && (
             <div
+              role="alert"
+              aria-live="assertive"
               style={{
                 background: "#fef2f2",
                 border: "1px solid #fecaca",
@@ -569,17 +580,19 @@ export default function Login() {
                 gap: 8,
               }}
             >
-              ⚠️ {error}
+              <span aria-hidden="true">⚠️</span> {error}
             </div>
           )}
 
           <form
             onSubmit={handleSubmit}
+            noValidate
             style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
           >
             {/* Email */}
             <div>
               <label
+                htmlFor="login-email"
                 style={{
                   display: "block",
                   fontWeight: 600,
@@ -592,6 +605,7 @@ export default function Login() {
               </label>
               <div style={{ position: "relative" }}>
                 <span
+                  aria-hidden="true"
                   style={{
                     position: "absolute",
                     left: 13,
@@ -605,13 +619,16 @@ export default function Login() {
                   {Ico.email}
                 </span>
                 <input
+                  id="login-email"
                   className="ss-input"
                   type="email"
                   placeholder="vous@exemple.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={onEmailChange}
                   required
                   autoComplete="email"
+                  inputMode="email"
+                  spellCheck={false}
                 />
               </div>
             </div>
@@ -627,6 +644,7 @@ export default function Login() {
                 }}
               >
                 <label
+                  htmlFor="login-password"
                   style={{
                     fontWeight: 600,
                     color: "#374151",
@@ -649,6 +667,7 @@ export default function Login() {
               </div>
               <div style={{ position: "relative" }}>
                 <span
+                  aria-hidden="true"
                   style={{
                     position: "absolute",
                     left: 13,
@@ -662,11 +681,12 @@ export default function Login() {
                   {Ico.lock}
                 </span>
                 <input
+                  id="login-password"
                   className="ss-input"
                   type={showPw ? "text" : "password"}
                   placeholder="••••••••"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={onPasswordChange}
                   required
                   autoComplete="current-password"
                   style={{ paddingRight: 40 }}
@@ -674,7 +694,13 @@ export default function Login() {
                 <button
                   type="button"
                   className="ss-toggle"
-                  onClick={() => setShowPw((v) => !v)}
+                  onClick={togglePw}
+                  aria-label={
+                    showPw
+                      ? "Masquer le mot de passe"
+                      : "Afficher le mot de passe"
+                  }
+                  aria-pressed={showPw}
                 >
                   {showPw ? Ico.eyeOff : Ico.eye}
                 </button>
@@ -686,10 +712,12 @@ export default function Login() {
               type="submit"
               className="ss-btn ss-btn-green"
               disabled={loading}
+              aria-busy={loading}
               style={{ marginTop: 4 }}
             >
               {loading ? (
                 <span
+                  aria-hidden="true"
                   style={{
                     width: 16,
                     height: 16,
@@ -720,7 +748,7 @@ export default function Login() {
             </Link>
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -7,7 +7,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\DashboardController;
-
+use App\Http\Controllers\AIController;
 
 
 // Routes publiques (pas besoin de token)
@@ -19,8 +19,8 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-
-
+// Route pour l'assistant IA
+Route::post('ai/chat', [AIController::class, 'chat']);
 
 // Routes protégées (token obligatoire)
 Route::middleware('auth:sanctum')->group(function () {
@@ -30,6 +30,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('products',  ProductController::class);
     Route::apiResource('sales',     SaleController::class);
     Route::apiResource('purchases', PurchaseController::class);
+    
 });
 
 

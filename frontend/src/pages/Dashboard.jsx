@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, memo, useCallback } from "react";
 import api from "../api/axios";
 
 /* ─── Helpers ─── */
@@ -15,41 +15,79 @@ const fmtShort = (n) => {
 const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
 
+/* ─── Inject styles (une seule fois, au chargement du module) ─── */
+const injectDashStyles = () => {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("ss-dash")) return;
+  const s = document.createElement("style");
+  s.id = "ss-dash";
+  s.textContent = `
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
+    @keyframes kpiIn    { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes shimmer  { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    @keyframes fadeIn   { from{opacity:0} to{opacity:1} }
+    @keyframes slideUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes pulseDot { from { opacity:.6 } to { opacity:1 } }
+    .ss-tr:hover td { background: rgba(255,255,255,.025) !important; }
+    .ss-dash-scroll::-webkit-scrollbar { width: 4px; }
+    .ss-dash-scroll::-webkit-scrollbar-track { background: transparent; }
+    .ss-dash-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius:4px; }
+    .ss-kpi-card { transition: transform .2s, box-shadow .2s; }
+    .ss-kpi-card:hover { transform: translateY(-3px); }
+    .ss-link-pill:focus-visible { outline: 2px solid #22c55e; outline-offset: 2px; }
+    .ss-retry-btn:focus-visible { outline: 2px solid #22c55e; outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+      }
+    }
+    @media (max-width: 900px) {
+      .ss-row-2 { grid-template-columns: 1fr !important; }
+    }
+  `;
+  document.head.appendChild(s);
+};
+injectDashStyles();
+
 /* ─── Mini sparkline SVG ─── */
-const Sparkline = ({
+const Sparkline = memo(function Sparkline({
   data = [],
   color = "#22c55e",
   height = 40,
   width = 100,
-}) => {
+}) {
   if (!data.length) return null;
   const max = Math.max(...data, 1);
   const min = Math.min(...data);
   const pad = 2;
   const w = width - pad * 2;
   const h = height - pad * 2;
+  const range = max - min || 1;
   const pts = data.map((v, i) => {
-    const x = pad + (i / (data.length - 1)) * w;
-    const y = pad + h - ((v - min) / (max - min || 1)) * h;
+    const x = pad + (i / Math.max(1, data.length - 1)) * w;
+    const y = pad + h - ((v - min) / range) * h;
     return `${x},${y}`;
   });
   const area = `M${pts.join("L")}L${pad + w},${pad + h}L${pad},${pad + h}Z`;
+  const gradId = `sg-${color.replace("#", "")}`;
+  const last = pts[pts.length - 1].split(",");
 
   return (
-    <svg width={width} height={height} style={{ overflow: "visible" }}>
+    <svg
+      width={width}
+      height={height}
+      style={{ overflow: "visible" }}
+      aria-hidden="true"
+    >
       <defs>
-        <linearGradient
-          id={`sg-${color.replace("#", "")}`}
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="1"
-        >
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity=".3" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <path d={area} fill={`url(#sg-${color.replace("#", "")})`} />
+      <path d={area} fill={`url(#${gradId})`} />
       <polyline
         points={pts.join(" ")}
         fill="none"
@@ -58,18 +96,18 @@ const Sparkline = ({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <circle
-        cx={pts[pts.length - 1].split(",")[0]}
-        cy={pts[pts.length - 1].split(",")[1]}
-        r="3"
-        fill={color}
-      />
+      <circle cx={last[0]} cy={last[1]} r="3" fill={color} />
     </svg>
   );
-};
+});
 
 /* ─── Animated counter ─── */
-const AnimCounter = ({ target, duration = 800, prefix = "", suffix = "" }) => {
+const AnimCounter = memo(function AnimCounter({
+  target,
+  duration = 800,
+  prefix = "",
+  suffix = "",
+}) {
   const [val, setVal] = useState(0);
   const ref = useRef(null);
   useEffect(() => {
@@ -91,10 +129,13 @@ const AnimCounter = ({ target, duration = 800, prefix = "", suffix = "" }) => {
       {suffix}
     </>
   );
-};
+});
 
 /* ─── KPI Card ─── */
-const KpiCard = ({
+const KPI_BASE_SHADOW =
+  "0 0 0 1px rgba(255,255,255,.04), 0 4px 24px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.04)";
+
+const KpiCard = memo(function KpiCard({
   title,
   value,
   icon,
@@ -103,12 +144,25 @@ const KpiCard = ({
   subUp,
   sparkData,
   delay = 0,
-}) => {
+}) {
   const isNeg = Number(value) < 0;
   const displayColor = isNeg ? "#f87171" : color;
 
+  const handleEnter = useCallback(
+    (e) => {
+      e.currentTarget.style.boxShadow = `0 0 0 1px ${displayColor}40, 0 12px 32px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06)`;
+    },
+    [displayColor],
+  );
+  const handleLeave = useCallback((e) => {
+    e.currentTarget.style.boxShadow = KPI_BASE_SHADOW;
+  }, []);
+
   return (
     <div
+      className="ss-kpi-card"
+      role="group"
+      aria-label={`${title} : ${fmt(value)} MAD`}
       style={{
         background: "linear-gradient(145deg, #111827, #0d1525)",
         border: `1px solid ${displayColor}28`,
@@ -119,21 +173,15 @@ const KpiCard = ({
         gap: 14,
         position: "relative",
         overflow: "hidden",
-        boxShadow: `0 0 0 1px rgba(255,255,255,.04), 0 4px 24px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.04)`,
+        boxShadow: KPI_BASE_SHADOW,
         animation: `kpiIn .5s ${delay}s ease both`,
-        transition: "transform .2s, box-shadow .2s",
       }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = "translateY(-3px)";
-        e.currentTarget.style.boxShadow = `0 0 0 1px ${displayColor}40, 0 12px 32px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06)`;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = "translateY(0)";
-        e.currentTarget.style.boxShadow = `0 0 0 1px rgba(255,255,255,.04), 0 4px 24px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.04)`;
-      }}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
     >
       {/* Glow blob */}
       <div
+        aria-hidden="true"
         style={{
           position: "absolute",
           top: -30,
@@ -191,6 +239,7 @@ const KpiCard = ({
           </p>
         </div>
         <div
+          aria-hidden="true"
           style={{
             width: 42,
             height: 42,
@@ -236,10 +285,10 @@ const KpiCard = ({
       )}
     </div>
   );
-};
+});
 
 /* ─── Alert pill ─── */
-const AlertPill = ({ product }) => {
+const AlertPill = memo(function AlertPill({ product }) {
   const critical = product.quantity === 0;
   return (
     <div
@@ -286,21 +335,28 @@ const AlertPill = ({ product }) => {
       </span>
     </div>
   );
-};
+});
 
 /* ─── Skeleton ─── */
-const Sk = ({ w = "100%", h = 16, r = 8 }) => (
-  <div
-    style={{
-      width: w,
-      height: h,
-      borderRadius: r,
-      background: "linear-gradient(90deg,#1a2235 25%,#232f44 50%,#1a2235 75%)",
-      backgroundSize: "200% 100%",
-      animation: "shimmer 1.6s infinite",
-    }}
-  />
-);
+const Sk = memo(function Sk({ w = "100%", h = 16, r = 8 }) {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        width: w,
+        height: h,
+        borderRadius: r,
+        background:
+          "linear-gradient(90deg,#1a2235 25%,#232f44 50%,#1a2235 75%)",
+        backgroundSize: "200% 100%",
+        animation: "shimmer 1.6s infinite",
+      }}
+    />
+  );
+});
+
+/* ─── Constantes (extraites du JSX pour éviter les re-créations) ─── */
+const SALES_HEADERS = ["Produit", "Qté", "Prix unit.", "Total", "Date"];
 
 /* ─── MAIN DASHBOARD ─── */
 export default function Dashboard() {
@@ -309,39 +365,43 @@ export default function Dashboard() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // Inject global styles
-    if (!document.getElementById("ss-dash")) {
-      const s = document.createElement("style");
-      s.id = "ss-dash";
-      s.textContent = `
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
-        @keyframes kpiIn    { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes shimmer  { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-        @keyframes fadeIn   { from{opacity:0} to{opacity:1} }
-        @keyframes slideUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        .ss-tr:hover td { background: rgba(255,255,255,.025) !important; }
-        .ss-dash-scroll::-webkit-scrollbar { width: 4px; }
-        .ss-dash-scroll::-webkit-scrollbar-track { background: transparent; }
-        .ss-dash-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius:4px; }
-      `;
-      document.head.appendChild(s);
-    }
-
+    let cancelled = false;
     api
       .get("/dashboard")
-      .then((r) => setData(r.data.data))
-      .catch(() => setError("Impossible de charger les données."))
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (!cancelled) setData(r.data.data);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Impossible de charger les données.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Mock sparkline data (7 derniers jours)
-  const revSpark = [40, 65, 45, 80, 55, 90, Number(data?.revenue ?? 0)];
-  const expSpark = [80, 70, 90, 60, 85, 70, Number(data?.expenses ?? 0)];
-  const profSpark = revSpark.map((v, i) => v - expSpark[i]);
+  // Mock sparkline data (7 derniers jours) — mémoïsées
+  const revSpark = useMemo(
+    () => [40, 65, 45, 80, 55, 90, Number(data?.revenue ?? 0)],
+    [data?.revenue],
+  );
+  const expSpark = useMemo(
+    () => [80, 70, 90, 60, 85, 70, Number(data?.expenses ?? 0)],
+    [data?.expenses],
+  );
+  const profSpark = useMemo(
+    () => revSpark.map((v, i) => v - expSpark[i]),
+    [revSpark, expSpark],
+  );
+
+  const handleReload = useCallback(() => window.location.reload(), []);
 
   if (error)
     return (
       <div
+        role="alert"
         style={{
           display: "flex",
           flexDirection: "column",
@@ -353,10 +413,14 @@ export default function Dashboard() {
           fontFamily: "'Outfit',sans-serif",
         }}
       >
-        <span style={{ fontSize: "2.5rem" }}>⚠️</span>
+        <span aria-hidden="true" style={{ fontSize: "2.5rem" }}>
+          ⚠️
+        </span>
         <p style={{ fontWeight: 600 }}>{error}</p>
         <button
-          onClick={() => window.location.reload()}
+          type="button"
+          className="ss-retry-btn"
+          onClick={handleReload}
           style={{
             background: "rgba(22,163,74,.15)",
             border: "1px solid rgba(22,163,74,.3)",
@@ -374,6 +438,8 @@ export default function Dashboard() {
     );
 
   const isProfit = Number(data?.profit ?? 0) >= 0;
+  const lowStockCount = data?.low_stock_count ?? 0;
+  const hasLowStock = lowStockCount > 0;
 
   return (
     <div
@@ -385,7 +451,7 @@ export default function Dashboard() {
       }}
     >
       {/* ── Header ── */}
-      <div
+      <header
         style={{
           display: "flex",
           justifyContent: "space-between",
@@ -435,13 +501,14 @@ export default function Dashboard() {
             }}
           >
             <span
+              aria-hidden="true"
               style={{
                 width: 7,
                 height: 7,
                 borderRadius: "50%",
                 background: "#22c55e",
                 display: "inline-block",
-                animation: "kpiIn .5s ease infinite alternate",
+                animation: "pulseDot 1s ease infinite alternate",
               }}
             />
             <span
@@ -451,7 +518,7 @@ export default function Dashboard() {
             </span>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* ── 4 KPI Cards ── */}
       <div
@@ -465,6 +532,7 @@ export default function Dashboard() {
           [0, 1, 2, 3].map((i) => (
             <div
               key={i}
+              aria-hidden="true"
               style={{
                 background: "rgba(255,255,255,.03)",
                 borderRadius: 16,
@@ -527,9 +595,11 @@ export default function Dashboard() {
               delay={0.1}
             />
             <div
+              role="group"
+              aria-label={`Alertes stock : ${lowStockCount} produit${lowStockCount > 1 ? "s" : ""}`}
               style={{
                 background: "linear-gradient(145deg,#111827,#0d1525)",
-                border: `1px solid ${data.low_stock_count > 0 ? "rgba(251,191,36,.3)" : "rgba(22,163,74,.25)"}`,
+                border: `1px solid ${hasLowStock ? "rgba(251,191,36,.3)" : "rgba(22,163,74,.25)"}`,
                 borderRadius: 16,
                 padding: "20px 22px",
                 display: "flex",
@@ -543,6 +613,7 @@ export default function Dashboard() {
               }}
             >
               <div
+                aria-hidden="true"
                 style={{
                   position: "absolute",
                   top: -30,
@@ -550,7 +621,7 @@ export default function Dashboard() {
                   width: 120,
                   height: 120,
                   borderRadius: "50%",
-                  background: `radial-gradient(circle, ${data.low_stock_count > 0 ? "rgba(251,191,36,.12)" : "rgba(22,163,74,.12)"} 0%, transparent 70%)`,
+                  background: `radial-gradient(circle, ${hasLowStock ? "rgba(251,191,36,.12)" : "rgba(22,163,74,.12)"} 0%, transparent 70%)`,
                 }}
               />
               <div
@@ -583,7 +654,7 @@ export default function Dashboard() {
                       fontFamily: "'JetBrains Mono',monospace",
                     }}
                   >
-                    {data.low_stock_count}
+                    {lowStockCount}
                     <span
                       style={{
                         fontSize: "0.5em",
@@ -592,39 +663,39 @@ export default function Dashboard() {
                         fontWeight: 400,
                       }}
                     >
-                      produit{data.low_stock_count > 1 ? "s" : ""}
+                      produit{lowStockCount > 1 ? "s" : ""}
                     </span>
                   </p>
                 </div>
                 <div
+                  aria-hidden="true"
                   style={{
                     width: 42,
                     height: 42,
                     borderRadius: 12,
-                    background:
-                      data.low_stock_count > 0
-                        ? "rgba(251,191,36,.15)"
-                        : "rgba(22,163,74,.15)",
+                    background: hasLowStock
+                      ? "rgba(251,191,36,.15)"
+                      : "rgba(22,163,74,.15)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     fontSize: "1.3rem",
-                    border: `1px solid ${data.low_stock_count > 0 ? "rgba(251,191,36,.25)" : "rgba(22,163,74,.25)"}`,
+                    border: `1px solid ${hasLowStock ? "rgba(251,191,36,.25)" : "rgba(22,163,74,.25)"}`,
                   }}
                 >
-                  {data.low_stock_count > 0 ? "⚠️" : "✅"}
+                  {hasLowStock ? "⚠️" : "✅"}
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <span
                   style={{
-                    color: data.low_stock_count > 0 ? "#fde68a" : "#22c55e",
+                    color: hasLowStock ? "#fde68a" : "#22c55e",
                     fontSize: "0.75rem",
                     fontWeight: 700,
                   }}
                 >
-                  {data.low_stock_count > 0
-                    ? `▼ ${data.low_stock_count} produit${data.low_stock_count > 1 ? "s" : ""} sous le seuil`
+                  {hasLowStock
+                    ? `▼ ${lowStockCount} produit${lowStockCount > 1 ? "s" : ""} sous le seuil`
                     : "▲ Tous les stocks OK"}
                 </span>
               </div>
@@ -635,6 +706,7 @@ export default function Dashboard() {
 
       {/* ── Row 2 : Ventes + Alertes ── */}
       <div
+        className="ss-row-2"
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 320px",
@@ -643,7 +715,8 @@ export default function Dashboard() {
         }}
       >
         {/* Table ventes */}
-        <div
+        <section
+          aria-label="Dernières ventes"
           style={{
             background: "linear-gradient(145deg, #111827, #0d1525)",
             border: "1px solid rgba(255,255,255,.07)",
@@ -679,6 +752,8 @@ export default function Dashboard() {
             </div>
             <a
               href="/sales"
+              className="ss-link-pill"
+              aria-label="Voir toutes les ventes"
               style={{
                 color: "#22c55e",
                 fontSize: "0.78rem",
@@ -712,7 +787,12 @@ export default function Dashboard() {
             </div>
           ) : !data.recent_sales?.length ? (
             <div style={{ padding: "3rem", textAlign: "center" }}>
-              <div style={{ fontSize: "2.5rem", marginBottom: 10 }}>📭</div>
+              <div
+                aria-hidden="true"
+                style={{ fontSize: "2.5rem", marginBottom: 10 }}
+              >
+                📭
+              </div>
               <p
                 style={{ color: "rgba(255,255,255,.3)", fontSize: "0.875rem" }}
               >
@@ -726,26 +806,25 @@ export default function Dashboard() {
                   <tr
                     style={{ borderBottom: "1px solid rgba(255,255,255,.06)" }}
                   >
-                    {["Produit", "Qté", "Prix unit.", "Total", "Date"].map(
-                      (h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: "10px 18px",
-                            textAlign: "left",
-                            color: "rgba(255,255,255,.3)",
-                            fontSize: "0.7rem",
-                            fontWeight: 700,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.08em",
-                            background: "rgba(255,255,255,.02)",
-                            fontFamily: "'Outfit',sans-serif",
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ),
-                    )}
+                    {SALES_HEADERS.map((h) => (
+                      <th
+                        key={h}
+                        scope="col"
+                        style={{
+                          padding: "10px 18px",
+                          textAlign: "left",
+                          color: "rgba(255,255,255,.3)",
+                          fontSize: "0.7rem",
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                          background: "rgba(255,255,255,.02)",
+                          fontFamily: "'Outfit',sans-serif",
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -824,10 +903,11 @@ export default function Dashboard() {
               </table>
             </div>
           )}
-        </div>
+        </section>
 
         {/* Alertes stock */}
-        <div
+        <section
+          aria-label="Alertes de stock"
           style={{
             background: "linear-gradient(145deg, #111827, #0d1525)",
             border: "1px solid rgba(255,255,255,.07)",
@@ -873,7 +953,12 @@ export default function Dashboard() {
               [1, 2, 3].map((i) => <Sk key={i} h={54} r={10} />)
             ) : !data.low_stock_products?.length ? (
               <div style={{ padding: "2rem", textAlign: "center" }}>
-                <div style={{ fontSize: "2rem", marginBottom: 8 }}>✅</div>
+                <div
+                  aria-hidden="true"
+                  style={{ fontSize: "2rem", marginBottom: 8 }}
+                >
+                  ✅
+                </div>
                 <p
                   style={{
                     color: "#22c55e",
@@ -904,7 +989,7 @@ export default function Dashboard() {
               ))
             )}
           </div>
-        </div>
+        </section>
       </div>
 
       {/* ── Row 3 : Mini stats bar ── */}
@@ -943,7 +1028,7 @@ export default function Dashboard() {
             },
             {
               label: "Produits alertés",
-              value: `${data.low_stock_count} / ?`,
+              value: `${lowStockCount} / ?`,
               color: "#fde68a",
             },
             {

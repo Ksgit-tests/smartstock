@@ -412,6 +412,8 @@ ${products
 DERNIÈRES VENTES : ${topSales || "Aucune vente enregistrée"}
 
 INSTRUCTIONS :
+- Tu as accès aux données ci-dessus, ne demande jamais à l'utilisateur de les fournir
+- Analyse directement et donne des recommandations concrètes basées sur ces données
 - Réponds toujours en français
 - Sois concis, pratique et orienté action
 - Base tes recommandations sur les vraies données ci-dessus
@@ -423,43 +425,48 @@ INSTRUCTIONS :
   /* Send message */
   const sendMessage = async (userText) => {
     if (!userText.trim() || loading) return;
+
     const userMsg = { role: "user", content: userText.trim(), ts: Date.now() };
-    setMessages((prev) => [...prev, userMsg]);
+
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
     setInput("");
     setLoading(true);
 
     try {
-        const context = buildContext(bizData);
-        const history = messages
-            .slice(-8)
-            .map((m) => ({ role: m.role, content: m.content }));
+      const context = buildContext(bizData);
 
-        const response = await api.post("/ai/chat", {
-            system: context,
-            messages: [...history, { role: "user", content: userText.trim() }],
-        });
+      const history = newMessages
+        .slice(-8)
+        .map((m) => ({ role: m.role, content: m.content }));
 
-        const aiText =
-            response.data?.data?.choices?.[0]?.message?.content ??
-            "Pas de reponse.";
+      const response = await api.post("/ai/chat", {
+        system: context,
+        messages: history,
+      });
 
-        setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: aiText, ts: Date.now() },
-        ]);
+      const aiText =
+        response.data?.choices?.[0]?.message?.content ?? "Pas de réponse.";
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: aiText, ts: Date.now() },
+      ]);
     } catch (err) {
-        console.error(err);
-        setMessages((prev) => [
-            ...prev,
-            {
-                role: "assistant",
-                content: "Erreur serveur IA. Vérifie ton backend.",
-                ts: Date.now(),
-                error: true,
-            },
-        ]);
+      console.error(err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Erreur serveur IA.",
+          ts: Date.now(),
+          error: true,
+        },
+      ]);
     }
-        
+
+    setLoading(false);
+  };
 
   const handleKey = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -477,7 +484,6 @@ INSTRUCTIONS :
       hour: "2-digit",
       minute: "2-digit",
     });
-
   return (
     <div
       style={{
@@ -550,7 +556,10 @@ INSTRUCTIONS :
                   }}
                 />
                 <p
-                  style={{ color: "rgba(255,255,255,.35)", fontSize: ".72rem" }}
+                  style={{
+                    color: "rgba(255,255,255,.35)",
+                    fontSize: ".72rem",
+                  }}
                 >
                   Actif · Données du commerce chargées
                 </p>
@@ -945,7 +954,11 @@ INSTRUCTIONS :
                 style={{ animation: `fadeUp .4s ${i * 0.08}s ease both` }}
               >
                 <div
-                  style={{ display: "flex", alignItems: "flex-start", gap: 10 }}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                  }}
                 >
                   <div
                     style={{

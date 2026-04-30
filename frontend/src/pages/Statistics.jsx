@@ -1,4 +1,11 @@
-import { useState, useEffect, useCallback, Component } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  memo,
+  Component,
+} from "react";
 import api from "../api/axios";
 
 /* ─── Helpers ─── */
@@ -32,10 +39,17 @@ class ChartErrorBoundary extends Component {
   static getDerivedStateFromError() {
     return { hasError: true };
   }
+  componentDidCatch(error, info) {
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.error("Chart error:", error, info);
+    }
+  }
   render() {
     if (this.state.hasError)
       return (
         <div
+          role="alert"
           style={{
             height: this.props.height || 200,
             display: "flex",
@@ -45,7 +59,9 @@ class ChartErrorBoundary extends Component {
             gap: 8,
           }}
         >
-          <span style={{ fontSize: "1.5rem" }}>📊</span>
+          <span aria-hidden="true" style={{ fontSize: "1.5rem" }}>
+            📊
+          </span>
           <p style={{ color: "rgba(255,255,255,.3)", fontSize: ".8rem" }}>
             Installez recharts :{" "}
             <code style={{ color: "#22c55e", fontFamily: "monospace" }}>
@@ -70,8 +86,9 @@ const getRecharts = async () => {
   }
 };
 
-/* ─── Inject styles ─── */
+/* ─── Inject styles (une seule fois au chargement) ─── */
 const injectStyles = () => {
+  if (typeof document === "undefined") return;
   if (document.getElementById("ss-stats-styles")) return;
   const s = document.createElement("style");
   s.id = "ss-stats-styles";
@@ -83,59 +100,83 @@ const injectStyles = () => {
     .ss-period.active { background:rgba(34,197,94,.15); border-color:rgba(34,197,94,.3); color:#86efac; }
     .ss-period:not(.active) { background:rgba(255,255,255,.04); color:rgba(255,255,255,.4); border-color:rgba(255,255,255,.07); }
     .ss-period:not(.active):hover { background:rgba(255,255,255,.08); color:rgba(255,255,255,.7); }
+    .ss-period:focus-visible { outline:2px solid #22c55e; outline-offset:2px; }
     .recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke:rgba(255,255,255,.06) !important; }
     .recharts-text { fill:rgba(255,255,255,.35) !important; font-family:'Outfit',sans-serif !important; font-size:.72rem !important; }
     .recharts-legend-item-text { color:rgba(255,255,255,.55) !important; font-family:'Outfit',sans-serif !important; font-size:.78rem !important; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+      }
+    }
+    @media (max-width: 900px) {
+      .ss-charts-grid { grid-template-columns: 1fr !important; }
+    }
   `;
   document.head.appendChild(s);
 };
+injectStyles();
 
-const Sk = ({ w = "100%", h = 200, r = 12 }) => (
-  <div
-    style={{
-      width: w,
-      height: h,
-      borderRadius: r,
-      background: "linear-gradient(90deg,#1a2235 25%,#232f44 50%,#1a2235 75%)",
-      backgroundSize: "200% 100%",
-      animation: "shimmer 1.6s infinite",
-    }}
-  />
-);
+const Sk = memo(function Sk({ w = "100%", h = 200, r = 12 }) {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        width: w,
+        height: h,
+        borderRadius: r,
+        background:
+          "linear-gradient(90deg,#1a2235 25%,#232f44 50%,#1a2235 75%)",
+        backgroundSize: "200% 100%",
+        animation: "shimmer 1.6s infinite",
+      }}
+    />
+  );
+});
 
-const ChartCard = ({ title, subtitle, children, delay = 0, height = 220 }) => (
-  <div
-    style={{
-      background: "linear-gradient(145deg,#111827,#0d1525)",
-      border: "1px solid rgba(255,255,255,.07)",
-      borderRadius: 16,
-      padding: "20px 22px",
-      boxShadow: "0 4px 24px rgba(0,0,0,.25)",
-      animation: `fadeUp .5s ${delay}s ease both`,
-    }}
-  >
-    <div style={{ marginBottom: 16 }}>
-      <h3
-        style={{
-          color: "#fff",
-          fontWeight: 700,
-          fontSize: ".95rem",
-          fontFamily: "'Outfit',sans-serif",
-          lineHeight: 1,
-          marginBottom: 4,
-        }}
-      >
-        {title}
-      </h3>
-      {subtitle && (
-        <p style={{ color: "rgba(255,255,255,.3)", fontSize: ".75rem" }}>
-          {subtitle}
-        </p>
-      )}
+const ChartCard = memo(function ChartCard({
+  title,
+  subtitle,
+  children,
+  delay = 0,
+  height = 220,
+}) {
+  return (
+    <div
+      style={{
+        background: "linear-gradient(145deg,#111827,#0d1525)",
+        border: "1px solid rgba(255,255,255,.07)",
+        borderRadius: 16,
+        padding: "20px 22px",
+        boxShadow: "0 4px 24px rgba(0,0,0,.25)",
+        animation: `fadeUp .5s ${delay}s ease both`,
+      }}
+    >
+      <div style={{ marginBottom: 16 }}>
+        <h3
+          style={{
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: ".95rem",
+            fontFamily: "'Outfit',sans-serif",
+            lineHeight: 1,
+            marginBottom: 4,
+          }}
+        >
+          {title}
+        </h3>
+        {subtitle && (
+          <p style={{ color: "rgba(255,255,255,.3)", fontSize: ".75rem" }}>
+            {subtitle}
+          </p>
+        )}
+      </div>
+      <ChartErrorBoundary height={height}>{children}</ChartErrorBoundary>
     </div>
-    <ChartErrorBoundary height={height}>{children}</ChartErrorBoundary>
-  </div>
-);
+  );
+});
 
 /* ─── Build data helpers ─── */
 const buildTimeline = (sales, purchases, days) => {
@@ -189,13 +230,27 @@ function ChartsSection({
   totalProfit,
   period,
 }) {
-  const [RC, setRC] = useState(null);
+  const [rcLib, setRcLib] = useState(null);
 
   useEffect(() => {
-    getRecharts().then(setRC);
+    let cancelled = false;
+    getRecharts().then((lib) => {
+      if (!cancelled) setRcLib(lib);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  if (!RC)
+  const margeData = useMemo(
+    () => [
+      { name: "Bénéfice", value: Math.max(0, totalProfit), fill: "#22c55e" },
+      { name: "Dépenses", value: totalDep, fill: "#f87171" },
+    ],
+    [totalProfit, totalDep],
+  );
+
+  if (!rcLib)
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {[1, 2, 3].map((i) => (
@@ -218,7 +273,7 @@ function ChartsSection({
     PieChart,
     Pie,
     Cell,
-  } = RC;
+  } = rcLib;
 
   const CustomTip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -257,11 +312,6 @@ function ChartsSection({
       </div>
     );
   };
-
-  const margeData = [
-    { name: "Bénéfice", value: Math.max(0, totalProfit), fill: "#22c55e" },
-    { name: "Dépenses", value: totalDep, fill: "#f87171" },
-  ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -335,6 +385,7 @@ function ChartsSection({
 
       {/* Bar + Pie */}
       <div
+        className="ss-charts-grid"
         style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16 }}
       >
         <ChartCard
@@ -354,7 +405,9 @@ function ChartsSection({
                 gap: 8,
               }}
             >
-              <span style={{ fontSize: "2rem" }}>📦</span>
+              <span aria-hidden="true" style={{ fontSize: "2rem" }}>
+                📦
+              </span>
               <p style={{ color: "rgba(255,255,255,.3)", fontSize: ".85rem" }}>
                 Aucune vente sur la période
               </p>
@@ -435,6 +488,7 @@ function ChartsSection({
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <div
+                    aria-hidden="true"
                     style={{
                       width: 7,
                       height: 7,
@@ -497,10 +551,10 @@ function ChartsSection({
 
 /* ═══ MAIN PAGE ═══ */
 export default function Statistics() {
-  injectStyles();
   const [sales, setSales] = useState([]);
   const [purchases, setPurchases] = useState([]);
-  const [products, setProducts] = useState([]);
+  // eslint-disable-next-line no-unused-vars
+  const [products, setProducts] = useState([]); // conservé pour compat (chargé mais non affiché)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [period, setPeriod] = useState(30);
@@ -519,6 +573,7 @@ export default function Statistics() {
       setProducts(prRes.data.data);
     } catch (e) {
       setError("Impossible de charger les données.");
+      // eslint-disable-next-line no-console
       console.error(e);
     } finally {
       setLoading(false);
@@ -529,21 +584,42 @@ export default function Statistics() {
     load();
   }, [load]);
 
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - period);
-  const filtSales = sales.filter((s) => new Date(s.created_at) >= cutoff);
-  const filtPurch = purchases.filter((p) => new Date(p.created_at) >= cutoff);
+  /* ── Filtrage et agrégats : tout mémoïsé pour éviter les recalculs inutiles ── */
+  const cutoff = useMemo(() => {
+    const c = new Date();
+    c.setDate(c.getDate() - period);
+    return c;
+  }, [period]);
 
-  const totalCA = filtSales.reduce((a, s) => a + Number(s.total_price), 0);
-  const totalDep = filtPurch.reduce((a, p) => a + Number(p.total_cost), 0);
+  const filtSales = useMemo(
+    () => sales.filter((s) => new Date(s.created_at) >= cutoff),
+    [sales, cutoff],
+  );
+  const filtPurch = useMemo(
+    () => purchases.filter((p) => new Date(p.created_at) >= cutoff),
+    [purchases, cutoff],
+  );
+
+  const totalCA = useMemo(
+    () => filtSales.reduce((a, s) => a + Number(s.total_price), 0),
+    [filtSales],
+  );
+  const totalDep = useMemo(
+    () => filtPurch.reduce((a, p) => a + Number(p.total_cost), 0),
+    [filtPurch],
+  );
   const totalProfit = totalCA - totalDep;
 
-  const timeline = buildTimeline(filtSales, filtPurch, period);
-  const topProducts = buildTopProducts(filtSales);
+  const timeline = useMemo(
+    () => buildTimeline(filtSales, filtPurch, period),
+    [filtSales, filtPurch, period],
+  );
+  const topProducts = useMemo(() => buildTopProducts(filtSales), [filtSales]);
 
   if (error)
     return (
       <div
+        role="alert"
         style={{
           display: "flex",
           flexDirection: "column",
@@ -554,9 +630,12 @@ export default function Statistics() {
           fontFamily: "'Outfit',sans-serif",
         }}
       >
-        <span style={{ fontSize: "2rem" }}>⚠️</span>
+        <span aria-hidden="true" style={{ fontSize: "2rem" }}>
+          ⚠️
+        </span>
         <p style={{ color: "#f87171", fontWeight: 600 }}>{error}</p>
         <button
+          type="button"
           onClick={load}
           style={{
             background: "rgba(22,163,74,.15)",
@@ -574,6 +653,33 @@ export default function Statistics() {
       </div>
     );
 
+  const kpiList = [
+    {
+      label: "Chiffre d'affaires",
+      value: `${fmt(totalCA)} MAD`,
+      color: "#22c55e",
+      icon: "💰",
+    },
+    {
+      label: "Dépenses",
+      value: `${fmt(totalDep)} MAD`,
+      color: "#f87171",
+      icon: "💸",
+    },
+    {
+      label: "Bénéfice net",
+      value: `${fmt(totalProfit)} MAD`,
+      color: totalProfit >= 0 ? "#3b82f6" : "#f87171",
+      icon: totalProfit >= 0 ? "📈" : "📉",
+    },
+    {
+      label: "Transactions",
+      value: filtSales.length,
+      color: "#a78bfa",
+      icon: "🧾",
+    },
+  ];
+
   return (
     <div
       style={{
@@ -585,7 +691,7 @@ export default function Statistics() {
       }}
     >
       {/* Header */}
-      <div
+      <header
         style={{
           display: "flex",
           justifyContent: "space-between",
@@ -611,18 +717,28 @@ export default function Statistics() {
             Analyse des performances commerciales
           </p>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {PERIODS.map((p) => (
-            <button
-              key={p.value}
-              className={`ss-period${period === p.value ? " active" : ""}`}
-              onClick={() => setPeriod(p.value)}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div
+          role="tablist"
+          aria-label="Période d'analyse"
+          style={{ display: "flex", gap: 6 }}
+        >
+          {PERIODS.map((p) => {
+            const isActive = period === p.value;
+            return (
+              <button
+                key={p.value}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                className={`ss-period${isActive ? " active" : ""}`}
+                onClick={() => setPeriod(p.value)}
+              >
+                {p.label}
+              </button>
+            );
+          })}
         </div>
-      </div>
+      </header>
 
       {/* KPI strip */}
       <div
@@ -632,32 +748,7 @@ export default function Statistics() {
           gap: 12,
         }}
       >
-        {[
-          {
-            label: "Chiffre d'affaires",
-            value: `${fmt(totalCA)} MAD`,
-            color: "#22c55e",
-            icon: "💰",
-          },
-          {
-            label: "Dépenses",
-            value: `${fmt(totalDep)} MAD`,
-            color: "#f87171",
-            icon: "💸",
-          },
-          {
-            label: "Bénéfice net",
-            value: `${fmt(totalProfit)} MAD`,
-            color: totalProfit >= 0 ? "#3b82f6" : "#f87171",
-            icon: totalProfit >= 0 ? "📈" : "📉",
-          },
-          {
-            label: "Transactions",
-            value: filtSales.length,
-            color: "#a78bfa",
-            icon: "🧾",
-          },
-        ].map((s, i) => (
+        {kpiList.map((s, i) => (
           <div
             key={s.label}
             style={{
@@ -671,7 +762,9 @@ export default function Statistics() {
               animation: `fadeUp .4s ${i * 0.06}s ease both`,
             }}
           >
-            <span style={{ fontSize: "1.3rem" }}>{s.icon}</span>
+            <span aria-hidden="true" style={{ fontSize: "1.3rem" }}>
+              {s.icon}
+            </span>
             <div style={{ minWidth: 0 }}>
               <p
                 style={{
@@ -721,7 +814,8 @@ export default function Statistics() {
 
       {/* Tableau récap */}
       {!loading && topProducts.length > 0 && (
-        <div
+        <section
+          aria-label="Classement des produits"
           style={{
             background: "linear-gradient(145deg,#111827,#0d1525)",
             border: "1px solid rgba(255,255,255,.07)",
@@ -763,6 +857,7 @@ export default function Statistics() {
                     (h) => (
                       <th
                         key={h}
+                        scope="col"
                         style={{
                           padding: "10px 18px",
                           textAlign: "left",
@@ -780,125 +875,128 @@ export default function Statistics() {
                 </tr>
               </thead>
               <tbody>
-                {topProducts.map((p, i) => (
-                  <tr
-                    key={p.name}
-                    style={{
-                      borderBottom:
-                        i < topProducts.length - 1
-                          ? "1px solid rgba(255,255,255,.04)"
-                          : "none",
-                    }}
-                  >
-                    <td style={{ padding: "12px 18px" }}>
-                      <span
+                {topProducts.map((p, i) => {
+                  const part = totalCA > 0 ? (p.revenus / totalCA) * 100 : 0;
+                  return (
+                    <tr
+                      key={p.name}
+                      style={{
+                        borderBottom:
+                          i < topProducts.length - 1
+                            ? "1px solid rgba(255,255,255,.04)"
+                            : "none",
+                      }}
+                    >
+                      <td style={{ padding: "12px 18px" }}>
+                        <span
+                          style={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: 6,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background:
+                              i === 0
+                                ? "rgba(251,191,36,.15)"
+                                : i === 1
+                                  ? "rgba(148,163,184,.1)"
+                                  : "rgba(255,255,255,.04)",
+                            color:
+                              i === 0
+                                ? "#fbbf24"
+                                : i === 1
+                                  ? "#94a3b8"
+                                  : "rgba(255,255,255,.4)",
+                            fontWeight: 800,
+                            fontSize: ".75rem",
+                            fontFamily: "'JetBrains Mono',monospace",
+                          }}
+                        >
+                          {i + 1}
+                        </span>
+                      </td>
+                      <td
                         style={{
-                          width: 26,
-                          height: 26,
-                          borderRadius: 6,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background:
-                            i === 0
-                              ? "rgba(251,191,36,.15)"
-                              : i === 1
-                                ? "rgba(148,163,184,.1)"
-                                : "rgba(255,255,255,.04)",
-                          color:
-                            i === 0
-                              ? "#fbbf24"
-                              : i === 1
-                                ? "#94a3b8"
-                                : "rgba(255,255,255,.4)",
-                          fontWeight: 800,
-                          fontSize: ".75rem",
+                          padding: "12px 18px",
+                          color: "#fff",
+                          fontWeight: 600,
+                          fontSize: ".875rem",
+                        }}
+                      >
+                        {p.name}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 18px",
+                          color: "#3b82f6",
+                          fontWeight: 700,
                           fontFamily: "'JetBrains Mono',monospace",
+                          fontSize: ".85rem",
                         }}
                       >
-                        {i + 1}
-                      </span>
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 18px",
-                        color: "#fff",
-                        fontWeight: 600,
-                        fontSize: ".875rem",
-                      }}
-                    >
-                      {p.name}
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 18px",
-                        color: "#3b82f6",
-                        fontWeight: 700,
-                        fontFamily: "'JetBrains Mono',monospace",
-                        fontSize: ".85rem",
-                      }}
-                    >
-                      {p.ventes} u.
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 18px",
-                        color: "#22c55e",
-                        fontWeight: 700,
-                        fontFamily: "'JetBrains Mono',monospace",
-                        fontSize: ".85rem",
-                      }}
-                    >
-                      {fmt(p.revenus)} MAD
-                    </td>
-                    <td style={{ padding: "12px 18px" }}>
-                      <div
+                        {p.ventes} u.
+                      </td>
+                      <td
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
+                          padding: "12px 18px",
+                          color: "#22c55e",
+                          fontWeight: 700,
+                          fontFamily: "'JetBrains Mono',monospace",
+                          fontSize: ".85rem",
                         }}
                       >
+                        {fmt(p.revenus)} MAD
+                      </td>
+                      <td style={{ padding: "12px 18px" }}>
                         <div
                           style={{
-                            flex: 1,
-                            height: 5,
-                            borderRadius: 5,
-                            background: "rgba(255,255,255,.08)",
-                            overflow: "hidden",
-                            maxWidth: 100,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
                           }}
                         >
                           <div
                             style={{
-                              height: "100%",
+                              flex: 1,
+                              height: 5,
                               borderRadius: 5,
-                              background: COLORS[i % COLORS.length],
-                              width: `${totalCA > 0 ? (p.revenus / totalCA) * 100 : 0}%`,
+                              background: "rgba(255,255,255,.08)",
+                              overflow: "hidden",
+                              maxWidth: 100,
                             }}
-                          />
+                          >
+                            <div
+                              style={{
+                                height: "100%",
+                                borderRadius: 5,
+                                background: COLORS[i % COLORS.length],
+                                width: `${part}%`,
+                              }}
+                            />
+                          </div>
+                          {/* 🐛 BUGFIX: l'original avait une fontFamily mal fermée
+                              ("'JetBrains Mono',monospace',minWidth:32") qui invalidait
+                              la prop. Corrigé en deux propriétés distinctes. */}
+                          <span
+                            style={{
+                              color: "rgba(255,255,255,.45)",
+                              fontSize: ".75rem",
+                              fontFamily: "'JetBrains Mono',monospace",
+                              minWidth: 32,
+                            }}
+                          >
+                            {part.toFixed(1)}%
+                          </span>
                         </div>
-                        <span
-                          style={{
-                            color: "rgba(255,255,255,.45)",
-                            fontSize: ".75rem",
-                            fontFamily:
-                              "'JetBrains Mono',monospace',minWidth:32",
-                          }}
-                        >
-                          {totalCA > 0
-                            ? ((p.revenus / totalCA) * 100).toFixed(1)
-                            : 0}
-                          %
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
